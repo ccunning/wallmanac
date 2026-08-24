@@ -1,0 +1,25 @@
+{
+  "name": "wallmanac",
+  "version": "1.0.0",
+  "description": "Self-hosted wall calendar display: Google Calendar and ICS feeds, keyword styling rules, and Google Tasks on a full-screen dashboard.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "calendar",
+    "ics",
+    "google-calendar",
+    "google-tasks",
+    "magicmirror",
+    "dashboard",
+    "wall-display",
+    "self-hosted"
+  ],
+  "author": "ccunning",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1",
+    "node-ical": "^0.26.1"
+  }
+}

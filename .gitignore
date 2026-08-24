@@ -1,0 +1,10 @@
+node_modules/
+npm-debug.log
+*.bak
+
+# Local user config — copy config/config.example.js to config/config.js
+config/config.js
+
+# OAuth refresh token for Google Tasks lives here at runtime
+data/*
+!data/.gitkeep

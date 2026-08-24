@@ -1,0 +1,15 @@
+services:
+  wallmanac:
+    build: .
+    container_name: wallmanac
+    restart: unless-stopped
+    ports:
+      - "8080:3000"
+    volumes:
+      # Mount the config directory so edits to config.js are picked up on
+      # page reload without rebuilding. Directory mounts avoid the inode-swap
+      # issue that single-file mounts have with atomic-save editors.
+      - ./config:/config
+      # Persists the Google Tasks refresh token across restarts/rebuilds so
+      # you don't have to redo the OAuth consent flow every time.
+      - ./data:/app/data

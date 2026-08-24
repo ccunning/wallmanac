@@ -2,8 +2,8 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const ical = require('node-ical');
 const { applyCustomEvents } = require('./customEvents');
+const { fetchRange, fetchAll } = require('./calendars');
 const googleTasks = require('./googleTasks');
 
 const app = express();
@@ -57,81 +57,12 @@ function requireAuth(req, res, next) {
 let cache = { rawEvents: [], errors: [], lastUpdated: null };
 let todoCache = { todos: [], connected: false, error: null, lastUpdated: null };
 
-function fetchRange(settings) {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth() - 1, 1); // cover prior month for month-grid overflow days
-  const to = new Date(now.getTime());
-  to.setDate(to.getDate() + Math.max(settings.agendaDaysAhead + 1, 45));
-  return { from, to };
-}
-
-async function fetchGoogle(cal, from, to) {
-  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.calendarId)}/events`
-    + `?key=${cal.apiKey}&singleEvents=true&orderBy=startTime`
-    + `&timeMin=${from.toISOString()}&timeMax=${to.toISOString()}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Google Calendar (${cal.name}): HTTP ${res.status}`);
-  const data = await res.json();
-  return (data.items || []).map((item) => {
-    const allDay = !!item.start.date;
-    return {
-      title: item.summary || '(untitled)',
-      start: new Date(item.start.date || item.start.dateTime),
-      end: new Date(item.end.date || item.end.dateTime),
-      allDay,
-      calendarName: cal.name,
-      color: cal.color,
-    };
-  });
-}
-
-async function fetchIcs(cal, from, to) {
-  const data = await ical.async.fromURL(cal.url);
-  const events = [];
-  for (const key in data) {
-    const item = data[key];
-    if (item.type !== 'VEVENT') continue;
-    const isAllDay = item.datetype === 'date';
-    let instances;
-    try {
-      instances = ical.expandRecurringEvent(item, { from, to });
-    } catch (err) {
-      continue; // malformed recurrence rule in this feed — skip just this event
-    }
-    for (const inst of instances) {
-      events.push({
-        title: inst.summary || item.summary || '(untitled)',
-        start: inst.start,
-        end: inst.end,
-        allDay: isAllDay,
-        calendarName: cal.name,
-        color: cal.color,
-      });
-    }
-  }
-  return events;
-}
-
 async function refreshData() {
-  const { settings, calendars, customEvents } = getConfig();
-  const { from, to } = fetchRange(settings);
-  const errors = [];
-  const results = await Promise.allSettled(
-    calendars.map((cal) => (cal.type === 'google' ? fetchGoogle(cal, from, to) : fetchIcs(cal, from, to)))
-  );
-
-  let combined = [];
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') {
-      combined = combined.concat(r.value);
-    } else {
-      errors.push(`${calendars[i].name}: ${r.reason.message}`);
-      console.error(`[wallmanac] fetch failed for ${calendars[i].name}:`, r.reason.message);
-    }
-  });
-
-  cache = { rawEvents: combined, errors, lastUpdated: new Date().toISOString() };
-  console.log(`[wallmanac] refreshed: ${combined.length} events, ${errors.length} errors`);
+  const { settings, calendars } = getConfig();
+  const { events, errors } = await fetchAll(calendars, fetchRange(settings));
+  errors.forEach((message) => console.error(`[wallmanac] fetch failed for ${message}`));
+  cache = { rawEvents: events, errors, lastUpdated: new Date().toISOString() };
+  console.log(`[wallmanac] refreshed: ${events.length} events, ${errors.length} errors`);
 }
 
 async function refreshTodos() {

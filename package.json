@@ -4,7 +4,9 @@
   "description": "Self-hosted wall calendar display: Google Calendar and ICS feeds, keyword styling rules, and Google Tasks on a full-screen dashboard.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "demo:ics": "node tools/generate-demo-ics.js"
   },
   "keywords": [
     "calendar",

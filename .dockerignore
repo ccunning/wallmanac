@@ -1,3 +1,15 @@
+.git
+.github
 node_modules
 npm-debug.log
 *.bak
+# The container reads /config/config.js from a bind mount, never from the image.
+config
+data
+test
+demo
+tools
+Makefile
+docker-compose*.yml
+*.md
+LICENSE

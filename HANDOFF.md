@@ -14,7 +14,7 @@ Three data sources feed the display:
 
 ## Repo layout
 ```
-wall-calendar/
+wallmanac/
 ├── server.js          Express app: fetch/cache calendars + tasks, serve API + static frontend
 ├── config.js           USER-EDITED config: calendars, customEvents rules, settings, googleTasks
 ├── customEvents.js     Keyword-matching engine (MagicMirror customEvents port)

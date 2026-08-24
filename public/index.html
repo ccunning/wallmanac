@@ -65,6 +65,11 @@ let SETTINGS = { weekStartsOn: 0, use24HourClock: false, agendaDaysAhead: 14, ma
 let allEvents = []; // parsed from /api/events, dates as Date objects
 
 function pad(n){ return n.toString().padStart(2,'0'); }
+// Event/task titles come from third-party calendar feeds — never trust them raw
+// in innerHTML.
+function escapeHtml(s){
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 const _contrastCanvas = document.createElement('canvas');
 _contrastCanvas.width = _contrastCanvas.height = 1;
 const _contrastCtx = _contrastCanvas.getContext('2d');
@@ -82,6 +87,15 @@ function renderIcon(symbol){
   // Treat any string containing an "fa-" token as Font Awesome classes.
   if(/(^|\s)fa-/.test(s)) return `<i class="${s.includes('fa-solid')||s.includes('fa-regular')||s.includes('fa-brands')||s.includes('fa-light')?'':'fa-solid '}${s}"></i>`;
   return s; // literal text / emoji fallback for backwards compat
+}
+// All-day events arrive anchored to UTC midnight of the date they name (see
+// toUtcMidnight in calendars.js), so read them back with the UTC getters and
+// rebuild them at local midnight — otherwise they'd render a day early for any
+// viewer behind UTC. Timed events are real instants and parse normally.
+function parseEventDate(value, allDay){
+  const d = new Date(value);
+  if(!allDay) return d;
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
 function sameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
@@ -112,6 +126,46 @@ function eventsOnDay(day){
                    .sort((a,b)=>a.start-b.start);
 }
 
+// Trim chips that don't fit the cell's fixed height and account for them in a
+// "+N more" line. The grid is a fixed-size wall display, so cells never grow —
+// anything that doesn't fit has to be summarised instead of overflowing.
+function fitDayCell(box){
+  const total = parseInt(box.dataset.total, 10) || 0;
+  const chips = [...box.querySelectorAll('.event-chip')];
+  const overflows = () => box.scrollHeight > box.clientHeight + 1;
+  let more = null;
+
+  function setMore(n){
+    if(n <= 0){ if(more){ more.remove(); more = null; } return; }
+    if(!more){ more = document.createElement('div'); more.className = 'more-chip'; }
+    more.textContent = `+${n} more`;
+    box.appendChild(more); // always the last line in the cell
+  }
+
+  // Put every chip back, then drop them from the bottom until what's left —
+  // including the "+N more" line, which costs height of its own — fits.
+  function fit(){
+    if(more){ more.remove(); more = null; }
+    chips.forEach(c => box.appendChild(c));
+    let shown = chips.length;
+    setMore(total - shown);
+    while(shown > 0 && overflows()){
+      chips[--shown].remove();
+      setMore(total - shown);
+    }
+    return shown;
+  }
+
+  const shown = fit();
+  // Still hiding events? Trade two-line titles for single-line ellipsised ones:
+  // roughly twice as many chips then fit, which is what a busy day needs on a
+  // smaller display. Revert if it didn't actually buy a row.
+  if(shown < total){
+    box.classList.add('compact');
+    if(fit() <= shown){ box.classList.remove('compact'); fit(); }
+  }
+}
+
 function renderMonthGrid(){
   const now = new Date();
   const today = startOfDay(now);
@@ -123,8 +177,12 @@ function renderMonthGrid(){
 
   const grid = document.getElementById('month-grid');
   grid.innerHTML = '';
-  grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  // minmax(0, 1fr), not 1fr: a bare 1fr track is min-content-sized at the
+  // bottom, so a busy day would stretch its row and push the weeks below it
+  // off the display. minmax(0, ...) pins every week to an equal share.
+  grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
 
+  const boxes = [];
   for(let i=0;i<totalCells;i++){
     const day = addDays(gridStart, i);
     const cell = document.createElement('div');
@@ -137,8 +195,15 @@ function renderMonthGrid(){
     num.textContent = day.getDate();
     cell.appendChild(num);
 
+    const box = document.createElement('div');
+    box.className = 'day-events';
+    cell.appendChild(box);
+
     const evs = eventsOnDay(day);
-    const shown = evs.slice(0, SETTINGS.maxEventsPerDayCell);
+    // maxEventsPerDayCell is an optional hard cap; 0 / unset means "as many as
+    // physically fit". Either way fitDayCell() has the final say.
+    const cap = SETTINGS.maxEventsPerDayCell > 0 ? SETTINGS.maxEventsPerDayCell : evs.length;
+    const shown = evs.slice(0, cap);
     shown.forEach(e=>{
       const chip = document.createElement('div');
       chip.className = 'event-chip';
@@ -148,17 +213,17 @@ function renderMonthGrid(){
       chip.innerHTML = `<span class="chip-symbol">${renderIcon(e.symbol)}</span>`
         + `<span class="chip-title">`
         + (time ? `<span class="chip-time">${time}</span> ` : '')
-        + `${e.title}</span>`;
-      cell.appendChild(chip);
+        + `${escapeHtml(e.title)}</span>`;
+      box.appendChild(chip);
     });
-    if(evs.length > shown.length){
-      const more = document.createElement('div');
-      more.className = 'more-chip';
-      more.textContent = `+${evs.length - shown.length} more`;
-      cell.appendChild(more);
-    }
+    box.dataset.total = evs.length;
+    if(evs.length) boxes.push(box);
     grid.appendChild(cell);
   }
+
+  // One pass after the whole grid is in the DOM, so the measuring below reads a
+  // single settled layout rather than reflowing cell by cell.
+  boxes.forEach(fitDayCell);
 }
 
 function renderAgenda(){
@@ -188,7 +253,7 @@ function renderAgenda(){
     row.style.color = contrastColor(e.color);
     const symbolStr = `<span class="agenda-symbol">${renderIcon(e.symbol)}</span>`;
     row.innerHTML = `${symbolStr}
-                      <span class="agenda-name">${e.title}</span>
+                      <span class="agenda-name">${escapeHtml(e.title)}</span>
                       <span class="agenda-when">
                         <span class="agenda-when-day">${dayLabel}</span>
                         <span class="agenda-when-time">${timeStr}</span>
@@ -213,7 +278,7 @@ function renderTodos(data){
     return;
   }
   if(data.error){
-    list.innerHTML = `<div class="todo-empty">Couldn't load tasks: ${data.error}</div>`;
+    list.innerHTML = `<div class="todo-empty">Couldn't load tasks: ${escapeHtml(data.error)}</div>`;
     return;
   }
   if(!data.todos || data.todos.length === 0){
@@ -224,7 +289,7 @@ function renderTodos(data){
     const due = t.due ? new Date(t.due).toLocaleDateString(undefined,{ month:'short', day:'numeric' }) : '';
     return `<div class="todo-row">
       <span class="todo-check">☐</span>
-      <span class="todo-name">${t.title}</span>
+      <span class="todo-name">${escapeHtml(t.title)}</span>
       ${due ? `<span class="todo-due">${due}</span>` : ''}
     </div>`;
   }).join('');
@@ -265,7 +330,7 @@ async function refreshData(){
     const res = await fetch('/api/events');
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    allEvents = (data.events || []).map(e => ({ ...e, start: new Date(e.start), end: new Date(e.end) }));
+    allEvents = (data.events || []).map(e => ({ ...e, start: parseEventDate(e.start, e.allDay), end: parseEventDate(e.end, e.allDay) }));
     renderAll();
     setStatus(data.errors && data.errors.length ? 'Some calendars failed: ' + data.errors.join(' | ') : '', data.errors && data.errors.length > 0);
   } catch(err){
@@ -294,6 +359,15 @@ async function refreshTodos(){
                                        // only re-fetches upstream calendars every refreshMinutes
   setInterval(refreshTodos, 60*1000);
   setInterval(renderAll, 60*1000);
+
+  // Chip heights depend on the webfonts and on the viewport, and the first
+  // paint may measure fallback metrics — re-run the fit when either settles.
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(renderMonthGrid);
+  let resizeTimer;
+  window.addEventListener('resize', ()=>{
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(renderMonthGrid, 150);
+  });
 })();
 </script>
 
@@ -361,6 +435,7 @@ body{
   grid-template-columns: repeat(7, 1fr);
   gap: var(--grid-gap);
   min-height: 0;
+  overflow: hidden;
 }
 .day-cell{
   background: var(--panel);
@@ -371,6 +446,24 @@ body{
   gap: 4px;
   overflow: hidden;
   min-height: 0;
+}
+/* Holds the chips for one day. min-height:0 lets it shrink inside the fixed
+   cell, and the clipping here is the backstop for fitDayCell()'s measuring. */
+.day-events{
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+/* Applied by fitDayCell() to days that would otherwise have to hide events. */
+.day-events.compact{ gap: 3px; }
+.day-events.compact .event-chip{ padding: 1px 5px; }
+.day-events.compact .chip-title{
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow-wrap: normal;
 }
 .day-cell.outside{ background: color-mix(in srgb, var(--panel) 35%, var(--ink)); }
 .day-cell.outside .day-num{ color: var(--text-dim); }
@@ -388,6 +481,7 @@ body{
   border: 1.5px solid var(--today-ring);
 }
 .event-chip{
+  flex-shrink: 0;
   font-size: 11.5px;
   padding: 2px 6px;
   border-radius: 4px;
@@ -418,7 +512,9 @@ body{
   overflow-wrap: anywhere;
 }
 .more-chip{
+  flex-shrink: 0;
   font-size: 11px;
+  line-height: 1.2;
   color: var(--text-dim);
   padding-left: 6px;
 }

@@ -1,16 +1,32 @@
-// Replicates MagicMirror's calendar module `customEvents` behavior:
-// - keyword: case-insensitive regex tested against the event title. First matching
-//   rule wins (matches MagicMirror's own break-on-first-match behavior).
-// - symbol: any string override (emoji or short label — see note in README)
-// - color: CSS color override
-// - transform: { search, replace, yearmatchgroup } regex title rewrite.
+// Replicates MagicMirror's calendar module `customEvents` behavior, with a
+// property-level fall-through extension:
+// - keyword: case-insensitive regex tested against the event title.
+// - Rules are evaluated top-to-bottom. The first rule that supplies a given
+//   property wins *that property*; properties a rule leaves blank fall through
+//   to later matching rules. So a high-priority rule can set only a color and
+//   let a lower-priority rule contribute the symbol.
+// - symbol: any string override (emoji, Font Awesome classes, or short label).
+//   Blank/omitted means "no opinion" — keep looking.
+// - color: CSS color override. Blank/omitted means "no opinion".
+// - transform: { search, replace, yearmatchgroup } regex title rewrite. Only
+//   the first matching rule with a usable transform is applied.
 //   yearmatchgroup: if set, that capture group is treated as a birth year and
 //   swapped for a computed age (relative to the event's own date) instead of
 //   being inserted literally — this reproduces MagicMirror's birthday-age trick.
 //
 // Extensions beyond the original MagicMirror spec (documented, opt-in):
 // - calendarName: scope a rule to one calendar only (by its `name` in config.js)
-// - hide: true — drop the event entirely instead of just restyling it
+// - hide: true — drop the event entirely instead of just restyling it.
+//   hide: false — explicitly keep the event, shielding it from any later
+//   matching `hide: true` rule. The first matching rule that states an opinion
+//   about `hide` decides.
+// - stop: true — stop evaluating rules after this one (MagicMirror's original
+//   break-on-first-match behavior, opt-in per rule).
+
+// Blank strings mean "no opinion" so the property falls through to later rules.
+function isSet(value) {
+  return typeof value === 'string' ? value.trim() !== '' : value != null;
+}
 
 function applyTransform(title, transform, eventDate) {
   const { search, replace, yearmatchgroup } = transform;
@@ -40,6 +56,11 @@ function applyTransform(title, transform, eventDate) {
 function applyCustomEvents(event, customEvents) {
   if (!customEvents || customEvents.length === 0) return event;
 
+  let symbolSet = false;
+  let colorSet = false;
+  let transformed = false;
+  let hideDecided = false;
+
   for (const rule of customEvents) {
     if (rule.calendarName && rule.calendarName !== event.calendarName) continue;
 
@@ -51,12 +72,24 @@ function applyCustomEvents(event, customEvents) {
     }
     if (!re.test(event.title)) continue;
 
-    if (rule.hide) return null;
-    if (rule.symbol) event.symbol = rule.symbol;
-    if (rule.color) event.color = rule.color;
-    if (rule.transform) event.title = applyTransform(event.title, rule.transform, event.start);
+    if (!hideDecided && rule.hide !== undefined && rule.hide !== null && rule.hide !== '') {
+      hideDecided = true;
+      if (rule.hide) return null;
+    }
+    if (!symbolSet && isSet(rule.symbol)) {
+      event.symbol = rule.symbol;
+      symbolSet = true;
+    }
+    if (!colorSet && isSet(rule.color)) {
+      event.color = rule.color;
+      colorSet = true;
+    }
+    if (!transformed && rule.transform && isSet(rule.transform.search)) {
+      event.title = applyTransform(event.title, rule.transform, event.start);
+      transformed = true;
+    }
 
-    break; // first match wins, same as MagicMirror
+    if (rule.stop) break; // opt-in: MagicMirror's original first-match-wins
   }
   return event;
 }

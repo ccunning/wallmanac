@@ -21,10 +21,27 @@ module.exports = {
     //   color: '#5B7DB1',
     //   url: 'https://example.com/path/to/calendar.ics',
     // },
+    // A local .ics file — handy for trying the display out with no account at
+    // all. `make demo` runs a ready-made one; see README.
+    // {
+    //   type: 'fixture',
+    //   name: 'Demo',
+    //   color: '#5B7DB1',
+    //   path: '/config/demo.ics',
+    // },
   ],
 
   // Keyword-based rules to restyle, hide, or rewrite events (MagicMirror
   // customEvents port — see README for the full rule reference).
+  //
+  // Rules are tested top-to-bottom and the first rule to fill in a given field
+  // wins *that field*, so leaving `color` or `symbol` out (or blank) lets a
+  // later matching rule supply it:
+  //
+  //   { keyword: 'Denver', color: '#5B7DB1' },            // colors the trip
+  //   { keyword: 'Flight', symbol: 'fa-solid fa-plane' }, // still adds the plane
+  //
+  // Add `stop: true` to a rule to end matching there instead.
   customEvents: [
     // { keyword: 'Birthday', color: 'Gold', symbol: 'fa-solid fa-cake-candles' },
     // { keyword: 'Doctor',   color: '#5FA8A0', symbol: 'fa-solid fa-stethoscope' },
@@ -35,7 +52,10 @@ module.exports = {
     use24HourClock: false,
     agendaDaysAhead: 60,
     refreshMinutes: 5,             // upstream calendar re-fetch interval
-    maxEventsPerDayCell: 2,
+    // Hard cap on chips per day cell. 0 = show as many as physically fit;
+    // either way the display trims to fit and adds a "+N more" line, so a busy
+    // day can never spill into the week below.
+    maxEventsPerDayCell: 0,
     maxEventsPerWeekStripCell: 3,
     weekStripHeight: '120px',
     port: 3000,

@@ -153,6 +153,15 @@ body {
 }
 
 /* ── Custom Events tab ─────────────────────────── */
+.events-help {
+  max-width: 860px;
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+.events-help em { color: var(--text); font-style: normal; }
+.events-help strong { color: var(--text); font-weight: 500; }
 #events-toolbar { margin-bottom: 14px; }
 #add-event-btn {
   background: var(--panel);
@@ -281,6 +290,7 @@ body {
   flex-shrink: 0;
 }
 .hide-row label { font-size: 13px; color: var(--text-dim); cursor: pointer; }
+.hide-row.stop-row { padding-top: 6px; }
 
 details.transform-wrap {
   margin-top: 12px;
@@ -395,6 +405,10 @@ details.transform-wrap .card-fields { margin-top: 10px; }
     </div>
 
     <div id="tab-events" class="tab-panel">
+      <p class="events-help">Rules are tested top-to-bottom against the event title.
+        The first rule to fill in a given field wins <em>that field</em> — leave Color or
+        Symbol blank and a later matching rule can supply it. Tick <strong>Stop here</strong>
+        to end matching at a rule instead.</p>
       <div id="events-toolbar">
         <button id="add-event-btn">+ Add rule</button>
       </div>
@@ -546,7 +560,7 @@ function renderEventsList() {
   const list = document.getElementById('events-list');
   const evs = configState.customEvents;
   if (evs.length === 0) {
-    list.innerHTML = '<p class="events-empty">No custom event rules yet. Click "+ Add rule" to create one.<br>Rules are tested top-to-bottom — the first match wins.</p>';
+    list.innerHTML = '<p class="events-empty">No custom event rules yet. Click "+ Add rule" to create one.<br>Rules are tested top-to-bottom, and the first rule to fill in a given field wins that field — leave Color or Symbol blank to let a later rule supply it.</p>';
     return;
   }
   list.innerHTML = evs.map((e, i) => {
@@ -566,22 +580,26 @@ function renderEventsList() {
           <label>Color</label>
           <div class="color-wrap">
             <span class="color-swatch" style="background:${esc(e.color) || 'transparent'}"></span>
-            <input type="text" data-field="color" value="${esc(e.color || '')}" placeholder="#hex or name">
+            <input type="text" data-field="color" value="${esc(e.color || '')}" placeholder="blank = fall through">
           </div>
         </div>
         <div class="field-group">
           <label>Symbol</label>
-          <input type="text" data-field="symbol" value="${esc(e.symbol || '')}" placeholder="🎂">
+          <input type="text" data-field="symbol" value="${esc(e.symbol || '')}" placeholder="blank = fall through">
         </div>
         <div class="field-group">
           <label>Calendar name</label>
-          <input type="text" data-field="calendarName" value="${esc(e.calendarName || '')}" placeholder="Family">
+          <input type="text" data-field="calendarName" value="${esc(e.calendarName || '')}" placeholder="all calendars">
         </div>
         <div class="field-group">
           <label>&nbsp;</label>
           <div class="hide-row">
             <input type="checkbox" id="hide-${i}" data-field="hide" ${e.hide ? 'checked' : ''}>
             <label for="hide-${i}">Hide event</label>
+          </div>
+          <div class="hide-row stop-row">
+            <input type="checkbox" id="stop-${i}" data-field="stop" ${e.stop ? 'checked' : ''}>
+            <label for="stop-${i}" title="Stop after this rule instead of letting blank fields fall through to later rules">Stop here</label>
           </div>
         </div>
       </div>
@@ -620,8 +638,8 @@ function updateField(idx, fieldPath, value) {
       if (!ev.transform) ev.transform = {};
       ev.transform[key] = key === 'yearmatchgroup' ? parseInt(value, 10) : value;
     }
-  } else if (fieldPath === 'hide') {
-    if (value) ev.hide = true; else delete ev.hide;
+  } else if (fieldPath === 'hide' || fieldPath === 'stop') {
+    if (value) ev[fieldPath] = true; else delete ev[fieldPath];
   } else if (value === '') {
     delete ev[fieldPath];
   } else {

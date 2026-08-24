@@ -1,0 +1,12 @@
+# Runs the display against the generated fixture calendar — no Google account,
+# no API key, nothing to configure. Start it with `make demo`, which regenerates
+# demo/demo.ics against today's date first.
+services:
+  wallmanac-demo:
+    build: .
+    container_name: wallmanac-demo
+    ports:
+      - "8081:3000"
+    volumes:
+      # demo/ stands in for the usual config directory: config.js + demo.ics.
+      - ./demo:/config:ro

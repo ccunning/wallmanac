@@ -124,3 +124,44 @@ test('the age substitution does not swallow $20 as if it were $2', () => {
   const out = applyTransform("Jane '1990", { search: "^(.*) '(\\d{4})$", replace: '$1 $2 $20', yearmatchgroup: 2 }, EVENT_DATE);
   assert.strictEqual(out, 'Jane 36 19900');
 });
+
+// ── emoji symbols ─────────────────────────────────────────────────────────
+// Emoji are a first-class alternative to Font Awesome classes in `symbol`,
+// so they have to survive the rule engine byte-for-byte.
+test('an emoji symbol is passed through unchanged', () => {
+  const r = applyCustomEvents(ev('Jane\'s Birthday'), [{ keyword: 'Birthday', symbol: '🎂', color: 'Gold' }]);
+  assert.strictEqual(r.symbol, '🎂');
+  assert.strictEqual(r.color, 'Gold');
+});
+
+test('multi-codepoint emoji are not mangled by the rule engine', () => {
+  for (const emoji of ['👨‍👩‍👧‍👦', '👍🏽', '🇺🇸', '❤️']) {
+    const r = applyCustomEvents(ev('Family Dinner'), [{ keyword: 'Family', symbol: emoji }]);
+    assert.strictEqual(r.symbol, emoji);
+  }
+});
+
+test('an emoji symbol counts as "set" and stops the symbol fall-through', () => {
+  const r = applyCustomEvents(ev('Flight to Denver'), [
+    { keyword: 'Denver', symbol: '✈️' },
+    { keyword: 'Flight', symbol: 'fa-solid fa-plane' },
+  ]);
+  assert.strictEqual(r.symbol, '✈️');
+});
+
+test('emoji and Font Awesome rules mix: a blank emoji slot still falls through', () => {
+  const r = applyCustomEvents(ev('Soccer practice'), [
+    { keyword: 'Soccer', color: '#C97064', symbol: '' },
+    { keyword: 'practice', symbol: '⚽' },
+  ]);
+  assert.strictEqual(r.color, '#C97064');
+  assert.strictEqual(r.symbol, '⚽');
+});
+
+test('an emoji symbol survives a transform on the same event', () => {
+  const r = applyCustomEvents(ev("Jane's Birthday '1990"), [
+    { keyword: 'Birthday', symbol: '🎂', transform: { search: "^(.*) '(\\d{4})$", replace: '$1 ($2)', yearmatchgroup: 2 } },
+  ]);
+  assert.strictEqual(r.title, "Jane's Birthday (36)");
+  assert.strictEqual(r.symbol, '🎂');
+});
